@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Generated output files
+output/
+*.pdf
+!templates/SL655.pdf
+
+# Screenshots and temp files
+*.png
+!SL655-XW Specs.png
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
