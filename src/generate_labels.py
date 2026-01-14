@@ -9,7 +9,7 @@ import qrcode
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import inch
+from reportlab.lib.units import inch, mm
 from reportlab.lib.utils import ImageReader
 import io
 import sys
@@ -28,9 +28,9 @@ def generate_qr_code(url, size_inches=1.2):
         QR code image object
     """
     qr = qrcode.QRCode(
-        version=1,
+        version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
+        box_size=40,
         border=1,
     )
     qr.add_data(url)
@@ -64,29 +64,35 @@ def create_qr_overlay(start_num, count, base_url, prefix="ITEM-"):
     cols = 4
     rows = 6
 
-    # Label dimensions and positioning (from SL655-XW specs)
-    # SL655: 1.5" x 1.5" labels on letter size sheet (8.5" x 11")
-    label_width = 1.5 * inch
-    label_height = 1.5 * inch
+    # Label dimensions and positioning (from user-provided measurements)
+    label_width = 38 * mm
+    label_height = 38 * mm
 
     # Margins from specs
-    left_margin = 0.78125 * inch
-    top_margin = 0.5 * inch
+    left_margin = 18 * mm  # Adjusted 2mm to the left
+    top_margin = 13 * mm
 
-    # Spacing between labels from specs
-    horizontal_spacing = 0.3125 * inch
-    vertical_spacing = 0.2 * inch
+    # Horizontal spacing between labels from specs
+    horizontal_spacing = 8 * mm
 
-    # Calculate starting position (top-left corner of first label)
+    # Calculate starting position (bottom-left corner of first label in ReportLab coords)
     start_x = left_margin
-    start_y = 11 * inch - top_margin  # Letter height minus top margin
+    # Letter height is 11 inches. Subtract top margin to get top edge, then subtract label height to get bottom
+    start_y = 11 * inch - top_margin - label_height
 
-    # Total spacing between label starts (label size + gap)
+    # Horizontal spacing between label starts (label size + gap)
     x_spacing = label_width + horizontal_spacing
-    y_spacing = label_height + vertical_spacing
 
-    # QR code size
-    qr_size = 1.2 * inch
+    # Calculate vertical spacing to fit exactly (distributes 6 rows evenly)
+    # Available vertical space = page height - top margin - bottom margin
+    # We need to fit 6 labels with 5 gaps between them
+    page_height = 11 * inch
+    available_height = page_height - (2 * top_margin)
+    vertical_gap = (available_height - (rows * label_height)) / (rows - 1)
+    y_spacing = label_height + vertical_gap
+
+    # QR code size tuned to nearly fill 38mm labels with room for text
+    qr_size = 32 * mm
 
     labels_per_page = cols * rows
     current_num = start_num
@@ -101,9 +107,13 @@ def create_qr_overlay(start_num, count, base_url, prefix="ITEM-"):
         col = page_index % cols
         row = page_index // cols
 
-        # Calculate QR code position (centered in label with extra top padding)
-        x = start_x + (col * x_spacing) + (label_width - qr_size) / 2
-        y = start_y - (row * y_spacing) - label_height + (label_height - qr_size) / 2 + 0.05 * inch
+        # Calculate label origin (bottom-left corner in ReportLab coordinates)
+        label_left = start_x + (col * x_spacing)
+        label_bottom = start_y - (row * y_spacing)
+
+        # Center QR code in label horizontally, position vertically with margin for text below
+        qr_x = label_left + (label_width - qr_size) / 2
+        qr_y = label_bottom + 4 * mm  # Small margin at bottom for text
 
         # Generate QR code for this item number
         item_id = f"{prefix}{current_num:04d}"
@@ -116,13 +126,13 @@ def create_qr_overlay(start_num, count, base_url, prefix="ITEM-"):
         img_buffer.seek(0)
 
         # Draw QR code on canvas
-        c.drawImage(ImageReader(img_buffer), x, y,
-                    width=qr_size, height=qr_size, preserveAspectRatio=True)
+        c.drawImage(ImageReader(img_buffer), qr_x, qr_y,
+                    width=qr_size, height=qr_size, mask='auto')
 
-        # Add text below QR code (closer to QR code)
-        text_y = y - 0.1 * inch
-        c.setFont("Helvetica", 8)
-        c.drawCentredString(x + qr_size/2, text_y, item_id)
+        # Add text below QR code
+        text_y = qr_y - 1.5 * mm
+        c.setFont("Helvetica", 7)
+        c.drawCentredString(qr_x + qr_size/2, text_y, item_id)
 
         current_num += 1
 
@@ -205,6 +215,11 @@ def main():
         default='ITEM-',
         help='Prefix for item IDs (default: ITEM-)'
     )
+    parser.add_argument(
+        '--no-template',
+        action='store_true',
+        help='Generate QR codes without merging with template'
+    )
 
     args = parser.parse_args()
 
@@ -218,9 +233,15 @@ def main():
     # Create QR code overlay
     overlay = create_qr_overlay(args.start, args.count, args.base_url, args.prefix)
 
-    # Merge with template
-    print(f"Merging with template: {args.template}")
-    merge_pdfs(args.template, overlay, args.output)
+    if args.no_template:
+        # Save overlay directly without template
+        with open(args.output, 'wb') as f:
+            f.write(overlay.getvalue())
+        print(f"Generated QR codes without template")
+    else:
+        # Merge with template
+        print(f"Merging with template: {args.template}")
+        merge_pdfs(args.template, overlay, args.output)
 
     print(f"✓ Successfully created {args.output}")
     print(f"  Labels: {args.prefix}{args.start:04d} through {args.prefix}{args.start + args.count - 1:04d}")
