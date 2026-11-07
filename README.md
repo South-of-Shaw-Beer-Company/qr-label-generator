@@ -17,10 +17,16 @@ Generate sequential QR codes for tracking labels using the SL655 label template 
 
 ## Setup
 
-1. Install Python dependencies:
+1. Use Python 3.11 or newer in a virtual environment, then install the locked dependencies:
 ```bash
-pip install -r requirements.txt
+python3 -m venv venv
+# Linux/macOS; on Windows use venv\\Scripts\\activate
+source venv/bin/activate
+python -m pip install --require-hashes -r requirements.txt
 ```
+
+This is a local command-line tool, not a hosted service. No account or network
+connection is needed to generate labels after installation.
 
 ## Usage
 
@@ -126,3 +132,46 @@ https://example.com/item/ITEM-0002
 - The script uses exact SL655 specifications (38mm x 38mm labels) for accurate printing
 - Works with any URL and prefix - perfect for inventory, asset tracking, keg management, etc.
 - Use `--no-template` to print on blank label sheets or other templates
+
+## Dependency security and regression checks
+
+`requirements.in` records the direct dependency choices. `requirements.txt` is
+the installable lock: all runtime dependencies (including transitive packages)
+have exact versions and distribution hashes. Keep both files in security PRs.
+The Windows-only qrcode dependency `colorama` is locked on every platform so the
+same file can be installed with hash checking on Windows and Linux.
+
+The PDF reader uses maintained `pypdf` instead of `PyPDF2`, which has no patched
+release for [GHSA-4vvm-4w3v-6mr8](https://github.com/advisories/GHSA-4vvm-4w3v-6mr8).
+Pillow is pinned to a security-patched version. Unaffected qrcode and ReportLab
+versions are retained rather than routinely upgraded.
+
+To refresh the lock after a reviewed security change, use Python 3.11 and an
+isolated tooling environment:
+
+```bash
+python3.11 -m venv tooling-venv
+# Linux/macOS commands; use the equivalent Scripts paths on Windows.
+tooling-venv/bin/python -m pip install pip-tools==7.5.3 pip-audit==2.10.1
+tooling-venv/bin/pip-compile --generate-hashes --no-strip-extras --no-emit-index-url --no-emit-trusted-host --output-file=requirements.txt requirements.in
+tooling-venv/bin/pip-audit --requirement requirements.txt --require-hashes --disable-pip --strict
+python -m pip install --require-hashes -r requirements.txt
+python -m pip check
+python -W error -m unittest discover -s tests -v
+```
+
+The security workflow runs these installation, PDF regression and audit checks on
+pull requests, main-branch pushes and a weekly schedule. Tests invoke the actual
+CLI, parse generated PDFs, verify page dimensions, sequential label text and
+embedded QR images, exercise the real template, and guard against the EOF-comment
+PDF-parser hang. Auditing fails on known vulnerabilities or collection errors;
+it does not suppress advisories or automatically modify dependencies.
+
+GitHub's dependency graph can read the exact runtime versions from
+`requirements.txt`, including the listed transitive packages. See GitHub's
+[dependency graph documentation](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-graph-data).
+Repository-level Dependabot security updates can propose fixes for alerts without
+a version-update schedule; see
+[Dependabot security updates](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-security-updates).
+No routine version-update configuration or paid security service is required.
+CodeQL remains managed separately by the repository's default setup.

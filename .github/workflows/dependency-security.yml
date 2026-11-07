@@ -1,0 +1,62 @@
+name: Dependency security and PDF regression
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 17 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+
+jobs:
+  pdf-regression:
+    name: PDF regression (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.11'
+          - os: ubuntu-latest
+            python: '3.14'
+          - os: windows-latest
+            python: '3.11'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the complete hashed runtime lock
+        run: python -m pip install --require-hashes -r requirements.txt
+      - name: Check dependency compatibility
+        run: python -m pip check
+      - name: Exercise the real CLI and inspect generated PDFs
+        run: python -W error -m unittest discover -s tests -v
+
+  dependency-audit:
+    name: Audit locked runtime dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Install audit tooling separately from application dependencies
+        run: |
+          python -m venv audit-venv
+          audit-venv/bin/python -m pip install pip-audit==2.10.1
+      - name: Fail on known vulnerabilities or incomplete collection
+        run: audit-venv/bin/python -m pip_audit --requirement requirements.txt --require-hashes --disable-pip --strict --progress-spinner off
