@@ -1,0 +1,10 @@
+# Direct runtime dependencies; compile the complete, hashed requirements.txt on Python 3.11.
+# Keep unaffected qrcode/reportlab versions; no routine major-version upgrades.
+qrcode[pil]==7.4.2
+# qrcode's Windows dependency; include on all platforms for one portable hashed lock.
+colorama==0.4.6
+# PyPDF2 3.0.1 has no patched release for GHSA-4vvm-4w3v-6mr8.
+pypdf==6.21.4
+reportlab==4.0.7
+# The historical 10.1.0 minimum is vulnerable; 13.0.0 includes current security fixes.
+Pillow==13.0.0
